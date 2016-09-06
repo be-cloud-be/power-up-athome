@@ -1,11 +1,11 @@
 {
-  "name": "Static Template",
+  "name": "AtHome Power Up for Trello",
   "description": "",
-  "details": "A static sample Power-Up hosted on GitHub pages. Feel free to fork [this repository](https://github.com/trello/power-up-template) as a starting point for your own Power-Up.",
+  "details": "Link your card to annouces on atHome to keep your pipline synchronized",
   "icon": {
     "url": "./images/logo.png"
   },
-  "author": "Trello Inc",
+  "author": "be-Cloud.be",
   "capabilities": [
     "attachment-sections",
     "attachment-thumbnail",
