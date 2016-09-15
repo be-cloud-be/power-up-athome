@@ -1,83 +1,24 @@
 /* global TrelloPowerUp */
+/* global firebase */
 
 var WHITE_ICON = './images/icon-white.svg';
 var GRAY_ICON = './images/icon-gray.svg';
+var ROOM_ICON = './images/bed.png';
+var EURO_ICON = './images/euro.png';
 
-var parkMap = {
-  acad: 'Acadia National Park',
-  arch: 'Arches National Park',
-  badl: 'Badlands National Park',
-  brca: 'Bryce Canyon National Park',
-  crla: 'Crater Lake National Park',
-  dena: 'Denali National Park',
-  glac: 'Glacier National Park',
-  grca: 'Grand Canyon National Park',
-  grte: 'Grand Teton National Park',
-  olym: 'Olympic National Park',
-  yell: 'Yellowstone National Park',
-  yose: 'Yosemite National Park',
-  zion: 'Zion National Park'
+var Promise = TrelloPowerUp.Promise;
+
+var config = {
+    apiKey: "AIzaSyAFzkiNICNkype3L2V_j8QJPJ8YZ1-Omno",
+    authDomain: "athome-scrapper.firebaseapp.com",
+    databaseURL: "https://athome-scrapper.firebaseio.com",
+    //storageBucket: "<BUCKET>.appspot.com",
 };
 
-var getBadges = function(t){
-  return t.card('name')
-  .get('name')
-  .then(function(cardName){
-    var badgeColor;
-    var icon = GRAY_ICON;
-    var lowercaseName = cardName.toLowerCase();
-    if(lowercaseName.indexOf('green') > -1){
-      badgeColor = 'green';
-      icon = WHITE_ICON;
-    } else if(lowercaseName.indexOf('yellow') > -1){
-      badgeColor = 'yellow';
-      icon = WHITE_ICON;
-    } else if(lowercaseName.indexOf('red') > -1){
-      badgeColor = 'red';
-      icon = WHITE_ICON;
-    }
-
-    if(lowercaseName.indexOf('dynamic') > -1){
-      // dynamic badges can have their function rerun after a set number
-      // of seconds defined by refresh. Minimum of 10 seconds.
-      return [{
-        dynamic: function(){
-          return {
-            title: 'Detail Badge', // for detail badges only
-            text: 'Dynamic ' + (Math.random() * 100).toFixed(0).toString(),
-            icon: icon, // for card front badges only
-            color: badgeColor,
-            refresh: 10
-          }
-        }
-      }]
-    }
-
-    if(lowercaseName.indexOf('static') > -1){
-      // return an array of badge objects
-      return [{
-        title: 'Detail Badge', // for detail badges only
-        text: 'Static',
-        icon: icon, // for card front badges only
-        color: badgeColor
-      }];
-    } else {
-      return [];
-    }
-  })
-};
-
-var formatNPSUrl = function(t, url){
-  if(!/^https?:\/\/www\.nps\.gov\/[a-z]{4}\//.test(url)){
-    return null;
-  }
-  var parkShort = /^https?:\/\/www\.nps\.gov\/([a-z]{4})\//.exec(url)[1];
-  if(parkShort && parkMap[parkShort]){
-    return parkMap[parkShort];
-  } else{
-    return null;
-  }
-};
+firebase.initializeApp(config);
+var db = firebase.database();
+var announcersRef = db.ref("athome-announcers");
+var propertiesRef = db.ref("athome-properties");
 
 var boardButtonCallback = function(t){
   return t.popup({
@@ -111,29 +52,105 @@ var boardButtonCallback = function(t){
   });
 };
 
-var cardButtonCallback = function(t){
-  var items = Object.keys(parkMap).map(function(parkCode){
-    var urlForCode = 'http://www.nps.gov/' + parkCode + '/';
-    return {
-      text: parkMap[parkCode],
-      url: urlForCode,
-      callback: function(t){
-        return t.attach({ url: urlForCode, name: parkMap[parkCode] })
-        .then(function(){
-          return t.closePopup();
-        })
+var getAtHomeValue = function (t, options) {
+  return t.card("attachments").get("attachments").map(function(t) {
+      return t.url
+  }).filter(function(t) {
+      return t.indexOf('http://athome-properties') == 0
+  }).then(function(e) {
+      if(e.length > 0)
+      {
+        return firebase.database().ref(e[0].substring(7)).once('value');
       }
-    };
   });
+}
 
-  return t.popup({
-    title: 'Popup Search Example',
-    items: items,
-    search: {
-      count: 5,
-      placeholder: 'Search National Parks',
-      empty: 'No parks found'
+var getBadges = function(t, options){
+  return getAtHomeValue(t, options)
+    .then(function(data){
+      var val = data && data.val();
+      if(val){
+        return [
+        {
+          title: 'Rooms', // for detail badges only
+          text: val['bedrooms_num'],
+          icon: ROOM_ICON,
+          color: 'yellow'
+        },
+        {
+          title: 'Price', // for detail badges only
+          text: Number(val['price']).toLocaleString(),
+          icon: EURO_ICON,
+          color: 'green'
+        }];
+      }
+  });
+};
+
+var setKeyCallback = function(key, val) {
+  var attachments = [{ 
+      name: 'FirebaseKey', 
+      url: "athome-properties/socoma/"+key,
+    },
+    { 
+      name: val.title, 
+      url: val.atHomeUrl,
+  }];
+  for (var i=1; i<=10;i++){
+    if(val.pictures['picture'+i]) {
+      attachments.push({ 
+        name: 'picture'+i,
+        url: val.pictures['picture'+i],
+      });
     }
+  }
+  return function(t) {
+    var promisses = attachments.map(function(attachement){t.attach(attachement);});
+    Promise.all(promisses)
+    .then(function(){
+      return t.closePopup();
+    })
+  }
+};
+
+var cardButtonCallback = function(t){
+  var items = [];
+  return propertiesRef.once("value", function(data) {
+    var vals = data.val();
+    var keys = Object.keys(vals['socoma'])
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      var val = vals['socoma'][key];
+      var attachments = [{ 
+      name: 'FirebaseKey', 
+      url: "athome-properties/socoma/"+key,
+        },
+        { 
+          name: val.title, 
+          url: val.atHomeUrl,
+      }];
+      for (var j=1; j<=10;j++){
+        if(val.pictures['picture'+j]) {
+          attachments.push({ 
+            name: 'picture'+j,
+            url: val.pictures['picture'+j],
+          });
+        }
+      }
+      items.push({
+        text: val.title,
+        callback: setKeyCallback(key, val),
+      });
+    }
+  }).then(function(){
+    return t.popup({
+      title: 'Announce Search',
+      items: items,
+      search: {
+        count: 5,
+        placeholder: 'Search for an Announce',
+        empty: 'No annouce found'
+    }})
   });
 };
 
@@ -142,10 +159,10 @@ TrelloPowerUp.initialize({
     // options.entries is a list of the attachments for this card
     // you can look through them and 'claim' any that you want to
     // include in your section.
-
-    // we will just claim urls for Yellowstone
+    
+    // we will just claim urls for firebase and athome
     var claimed = options.entries.filter(function(attachment){
-      return attachment.url.indexOf('http://www.nps.gov/yell/') == 0;
+      return attachment.url.indexOf('http://athome-properties') == 0
     });
 
     // you can have more than one attachment section on a card
@@ -157,13 +174,12 @@ TrelloPowerUp.initialize({
       // that returns the section title. If you do so, provide a unique id for
       // your section
       return [{
-        id: 'Yellowstone', // optional if you aren't using a function for the title
-        claimed: claimed,
         icon: GRAY_ICON,
-        title: 'Example Attachment Section: Yellowstone',
+        title: 'Property information',
+        claimed: claimed,
         content: {
           type: 'iframe',
-          url: t.signUrl('./section.html', { arg: 'you can pass your section args here' }),
+          url: t.signUrl('./section.html'),
           height: 230
         }
       }];
@@ -172,64 +188,34 @@ TrelloPowerUp.initialize({
     }
   },
   'attachment-thumbnail': function(t, options){
-    var parkName = formatNPSUrl(t, options.url);
-    if(parkName){
-      // return an object with some or all of these properties:
-      // url, title, image, openText, modified (Date), created (Date), createdBy, modifiedBy
-      return {
-        url: options.url,
-        title: parkName,
-        image: {
-          url: './images/nps.svg',
-          logo: true // false if you are using a thumbnail of the content
-        },
-        openText: 'Open in NPS'
-      };
-    } else {
-      throw t.NotHandled();
+    if(options.url.indexOf('http://athome-properties') == 0){
+      return [];
     }
+    throw t.NotHandled();  
   },
   'board-buttons': function(t, options){
     return [{
       icon: WHITE_ICON,
-      text: 'Template',
+      text: 'AtHome',
       callback: boardButtonCallback
     }];
   },
   'card-badges': function(t, options){
-    return getBadges(t);
+    return getBadges(t, options);
   },
   'card-buttons': function(t, options) {
     return [{
       icon: GRAY_ICON,
-      text: 'Template',
+      text: 'AtHome Link',
       callback: cardButtonCallback
     }];
   },
   'card-detail-badges': function(t, options) {
-    return getBadges(t);
+    return getBadges(t, options);
   },
   'card-from-url': function(t, options) {
-    var parkName = formatNPSUrl(t, options.url);
-    if(parkName){
-      return {
-        name: parkName,
-        desc: 'An awesome park: ' + options.url
-      };
-    } else {
-      throw t.NotHandled();
-    }
   },
   'format-url': function(t, options) {
-    var parkName = formatNPSUrl(t, options.url);
-    if(parkName){
-      return {
-        icon: GRAY_ICON,
-        text: parkName
-      };
-    } else {
-      throw t.NotHandled();
-    }
   },
   'show-settings': function(t, options){
     return t.popup({
@@ -237,5 +223,5 @@ TrelloPowerUp.initialize({
       url: './settings.html',
       height: 184
     });
-  }
+  },
 });
