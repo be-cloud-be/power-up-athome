@@ -1,0 +1,75 @@
+worker_processes 1;
+error_log stderr;
+pid nginx.pid;
+daemon off;
+
+events {
+  worker_connections 768;
+}
+
+http {
+  types_hash_max_size 2048;
+  include mime.types;
+  server {
+    listen {{ $.PORT }};
+    server_name  _;
+    {{ if ne $.NGINX_ROOT "" }}
+      root /app/www/{{ $.NGINX_ROOT }};
+    {{ else }}
+      root /app/www;
+    {{ end }}
+    index index.html;
+
+    location / {
+      try_files $uri $uri/ /index.html;
+    }
+    
+    
+## Start CORS here.  See http://enable-cors.org/server_nginx.html for comments
+
+    if (\$http_origin ~* (^https?://.*\.$VHOST$)) {
+        set \$cors corson;
+    }
+    if (\$http_origin ~* (^http://(localhost|127.0.0.1)(:[0-9]+)?$)) {
+        set \$cors corson;
+    }
+
+    if (\$request_method = OPTIONS) {
+        set \$cors '\${cors}options';
+    }
+
+    if (\$request_method = GET) {
+        set \$cors '\${cors}get';
+    }
+    if (\$request_method = POST) {
+        set \$cors '\${cors}post';
+    }
+
+    if (\$cors = corsonget) {
+        add_header Access-Control-Allow-Origin \$http_origin;
+        add_header Access-Control-Allow-Credentials true;
+    }
+
+    if (\$cors = corsonpost) {
+        add_header Access-Control-Allow-Origin \$http_origin;
+        add_header Access-Control-Allow-Credentials true;
+    }
+
+    if (\$cors = corsonoptions) {
+        add_header Access-Control-Allow-Origin \$http_origin;
+        add_header Access-Control-Allow-Credentials true;
+
+        add_header Access-Control-Max-Age 1728000;
+
+        add_header Access-Control-Allow-Methods 'GET, POST, OPTIONS';
+        
+        add_header Access-Control-Allow-Headers 'Authorization,Content-Type,Accept,Origin,User-Agent,DNT,Cache-Control,X-Mx-ReqToken,Keep-Alive,X-Requested-With,If-Modified-Since';
+
+        add_header Content-Length 0;
+        add_header Content-Type 'text/plain charset=UTF-8';
+        return 204;
+    }
+### End CORS
+    
+  }
+}
